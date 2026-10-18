@@ -36,6 +36,9 @@ def main():
     for i, k in enumerate(layout, 1):
         name = "%03d_%s_%s" % (i, k["row"], k["key"])
         doc = App.openDocument(os.path.join(HERE, "keys", name + ".FCStd"))
+        if doc.getObject("Legend") is not None:
+            # re-evaluate the font path and texts from set.FCStd, wherever the repository now is
+            doc.Legend.touch()
         doc.recompute()
         cap = doc.getObject("Cap") or doc.getObject("Body")  # keys without a legend only link the shape
         write(Part.getShape(cap), os.path.join(out, name + ".stl"))

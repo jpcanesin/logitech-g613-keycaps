@@ -9,14 +9,39 @@ own sculpted height, tilt and dish, and the caps keep the Romer-G four-block ste
 
 ![The underside, showing the Romer-G stems and ribs of every key](docs/keyboard_bottom.png)
 
-## Quick start
+## Download the STLs
 
-- **Print:** export the STLs (see [Export STLs](#workflows)), then print each key rim-down.
-  For two colours, load a key's `NNN_<row>_<key>.stl` and `NNN_<row>_<key>_legend.stl` into
-  the slicer as one multi-part object and give the legend its own filament.
-- **Edit:** open `keyboard.FCStd` in FreeCAD 1.0+ (tested with 1.1). First point the
-  `font_file` cell of `set.FCStd` at `fonts/Inter-SemiBold.ttf` in your copy of the repository.
-  Then change any cell in the spreadsheets and recompute.
+Ready-to-print STLs for all 110 keys:
+**[logitech-g613-keycaps-stl.zip](https://github.com/jpcanesin/logitech-g613-keycaps/releases/latest/download/logitech-g613-keycaps-stl.zip)**
+(latest release).
+
+Each key comes as two files: `NNN_<row>_<key>.stl`, the cap, and `NNN_<row>_<key>_legend.stl`,
+the legend inlay. Print rim-down. For two colours, load both files of a key into the slicer as
+one multi-part object (they share coordinates) and give the legend its own filament. Space has
+no legend, so it has only the cap file.
+
+## Generate the STLs yourself
+
+To print your own edits, or to regenerate the files after changing measurements:
+
+1. Install FreeCAD 1.0 or newer (tested with 1.1). It includes `freecadcmd`, the command-line
+   version. With the AppImage, run `FreeCAD.AppImage freecadcmd …` instead.
+2. Clone the repository:
+   `git clone https://github.com/jpcanesin/logitech-g613-keycaps.git`
+3. Run the export from anywhere, with the path to your clone:
+
+   ```sh
+   freecadcmd -c "p = '/path/to/logitech-g613-keycaps/export_stl.py'; exec(open(p).read(), {'__file__': p})"
+   ```
+
+The STLs land in `stl/` inside the clone (about 200 MB; it takes a minute or two). They're
+meshed from the FreeCAD files as they are, so your edits are included.
+
+## Edit the design
+
+Open `keyboard.FCStd` in FreeCAD 1.0+, change any cell in the `Set`, `Params` or `Legend`
+spreadsheets and recompute (details in [Workflows](#workflows)). The legend font is found
+relative to the repository, so it works wherever you cloned it.
 
 ## Files
 
@@ -73,7 +98,8 @@ the scripts once generated: open them, edit a spreadsheet cell, recompute.
 
 **Edit the design in FreeCAD.** Open `keyboard.FCStd`, a shape file or a key file. Change cells in
 `Set`, `Params` or `Legend`, recompute and save. Then export STLs. To change the font for the whole
-set, put the font file in `fonts/` and point `Set.font_file` at it.
+set, put the font file in `fonts/` and set `Set.font_name` to its path relative to the
+repository, e.g. `fonts/MyFont.ttf`.
 
 Do not rerun `build_native.py` afterwards: it regenerates the FreeCAD files from the CSVs and
 overwrites such edits.
@@ -89,13 +115,9 @@ It must run in the GUI: files saved by a headless FreeCAD open with every object
 Shapes whose measurements and set values are unchanged come from `fitted_shapes.csv`. A full
 regeneration then takes under 2 minutes, and a full refit of all 20 shapes about 5 more.
 
-**Export STLs** (headless is fine):
-
-```sh
-freecadcmd -c "p = '/path/to/repo/export_stl.py'; exec(open(p).read(), {'__file__': p})"
-```
-
-STLs are meshed from the current FreeCAD files with 0.01 mm deflection, rim down on Z=0.
+**Export STLs:** see [Generate the STLs yourself](#generate-the-stls-yourself). STLs are meshed
+from the current FreeCAD files with 0.01 mm deflection, rim down on Z=0. The export re-evaluates
+each key's `Legend` sheet first, so changes in `set.FCStd` (for example the font) reach every key.
 
 ## Conventions
 
@@ -152,12 +174,12 @@ thickness.
 - `size_mm`: cap height of the text; blank uses `Set.legend_size` (3.6).
 
 Set-wide legend values in `set.FCStd`:
-- `font_file`
+- `font_name`: the font file, relative to the repository (`fonts/Inter-SemiBold.ttf`)
+- `font_file`: derived from the location of `set.FCStd` plus `font_name`, so the font resolves
+  wherever the repository is; do not edit
 - `legend_size`
 - `line_gap`: between the two lines of a stacked legend, 1.0
 - `legend_depth`: inlay depth perpendicular to the dish, 0.4 of the 0.6 mm top
-
-The font path is absolute: on another computer, point `Set.font_file` at the copy in `fonts/`.
 
 ### Parameters not measured
 

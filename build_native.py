@@ -101,7 +101,8 @@ DERIVED = [
 
 
 LEGEND_SET_FIELDS = [
-    ("font_file", "legend font file (path); point it at another .ttf/.otf to change the font"),
+    ("font_name", "legend font, relative to the repository; point it at another .ttf/.otf to change the font"),
+    ("font_file", "derived: the repository folder (where this file lives) + font_name"),
     ("legend_size", "default legend cap height"),
     ("line_gap", "gap between the two lines of a stacked legend"),
     ("legend_depth", "inlay depth, measured perpendicular to the dish"),
@@ -110,7 +111,9 @@ LEGEND_SET_FIELDS = [
 SET_DEFAULTS = dict(
     lip_radius=1.5, block_fillet=0.35, rib_fillet=0.25,
     top_margin=3.0, bottom_margin=1.0, rib_overlap=0.1, cutter_min_size=200.0, cutter_length_factor=4.0,
-    font_file=os.path.join(HERE, "fonts", "Inter-SemiBold.ttf"), legend_size=3.6, line_gap=1.0, legend_depth=0.4,
+    font_name="fonts/Inter-SemiBold.ttf", legend_size=3.6, line_gap=1.0, legend_depth=0.4,
+    # set.FCStd's own path minus "set.FCStd" (9 characters): the font resolves wherever the repository is
+    font_file="=_self.Document.FileName[:-9] + font_name",
 )
 MEASURED = ["bottom_width", "bottom_length", "front_min", "front_max", "back_min", "back_max", "top_width", "top_length"]
 STEP = ["step_body_length", "step_height"]  # optional: stepped keys (e.g. a stepped Caps Lock)
@@ -480,8 +483,9 @@ def main():
     sheet = set_doc.addObject("Spreadsheet::Sheet", "Set")
     write_sheet(sheet, [(a, set_vals[a] if isinstance(set_vals[a], str) else repr(set_vals[a]), d)
                         for a, d in SET_FIELDS + LEGEND_SET_FIELDS])
-    set_doc.recompute()
     set_doc.saveAs(os.path.join(HERE, "set.FCStd"))
+    set_doc.recompute()  # after saving: font_file is built from the file's own location
+    set_doc.save()
 
     cache_path = os.path.join(HERE, "fitted_shapes.csv")
     cache = {}
