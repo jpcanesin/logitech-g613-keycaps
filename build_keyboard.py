@@ -1,9 +1,9 @@
 """Generate one STL per key of the keyboard.
 
 Inputs (same folder): keys_to_measure.csv, set_measurements.csv, layout.csv.
-Outputs: fitted_shapes.csv (fit cache, one row per distinct shape), stl/NNN_<row>_<key>.stl,
-shapes/<shape_id>.FCStd (one per distinct shape) and keyboard.FCStd (every key as a link to its
-shape file, placed on the layout grid).
+Outputs: fitted_shapes.csv (fit cache, one row per distinct shape) and stl/NNN_<row>_<key>.stl.
+The parametric FreeCAD files (set.FCStd, shapes/, keyboard.FCStd) come from build_native.py,
+which reads fitted_shapes.csv.
 
 Run headless:
   ~/tools/FreeCAD.AppImage freecadcmd -c "exec(open('/home/jpcanesin/Documents/3d/keyboard/build_keyboard.py').read())"
@@ -21,7 +21,6 @@ sys.path.insert(0, HERE)
 import keycap  # noqa: E402
 import fit_profile  # noqa: E402
 
-PITCH = 19.05  # key spacing in mm: layout.csv positions are in units of this
 EXPORT_STL = globals().get("EXPORT_STL", True)
 
 MEASURED = ["bottom_width", "bottom_length", "front_min", "front_max", "back_min", "back_max", "top_width", "top_length"]
@@ -94,7 +93,6 @@ def main():
 
     if EXPORT_STL:
         export_stl(layout, fitted)
-    build_master(layout, fitted)
 
 
 def export_stl(layout, fitted):
@@ -113,36 +111,6 @@ def export_stl(layout, fitted):
             print("built", sid, "valid", s.isValid(), "solids", len(s.Solids), flush=True)
             first[key] = path
     print("done:", len(layout), "keys in", out, flush=True)
-
-
-def build_master(layout, fitted):
-    import FreeCAD as App
-    shape_dir = os.path.join(HERE, "shapes")
-    os.makedirs(shape_dir, exist_ok=True)
-    targets = {}
-    for k in layout:
-        sid = k["shape_id"]
-        key = json.dumps(fitted[sid], sort_keys=True)
-        if key not in targets:
-            doc = App.newDocument(sid.replace("-", "_"))
-            obj = doc.addObject("Part::Feature", "Keycap")
-            obj.Shape = keycap.make_keycap(**fitted[sid])
-            doc.saveAs(os.path.join(shape_dir, sid + ".FCStd"))
-            targets[key] = obj
-            print("shape file", sid, flush=True)
-    master = App.newDocument("Keyboard")
-    master.saveAs(os.path.join(HERE, "keyboard.FCStd"))
-    for k in layout:
-        x = (float(k["x_u"]) + float(k["w_u"]) / 2) * PITCH
-        y = -(float(k["y_u"]) + float(k["h_u"]) / 2) * PITCH  # rows run toward the user (-Y)
-        link = master.addObject("App::Link", "Key")
-        link.setLink(targets[json.dumps(fitted[k["shape_id"]], sort_keys=True)])
-        link.Label = "%s_%s" % (k["row"], k["key"])
-        link.Placement = App.Placement(App.Vector(x, y, 0), App.Rotation())
-        link.Visibility = True  # headless-saved files otherwise open with everything hidden
-    master.recompute()
-    master.save()
-    print("master: keyboard.FCStd with", len(layout), "linked keys", flush=True)
 
 
 main()

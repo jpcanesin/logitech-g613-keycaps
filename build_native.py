@@ -1,0 +1,371 @@
+"""Generate native, fully parametric FreeCAD keycaps.
+
+Writes set.FCStd (spreadsheet "Set" with the values shared by the whole set), one
+shapes/<shape_id>.FCStd per distinct shape (spreadsheet "Params" + an expression-driven
+model whose result is the object "Keycap") and keyboard.FCStd (every key linked to its
+shape at its layout position). After generation the .FCStd files need neither Python
+nor this script: edit a cell in Set or Params and recompute.
+
+Per-shape values come from fitted_shapes.csv (written by build_keyboard.py).
+
+Run it inside the FreeCAD GUI (Python console, or the MCP execute_code tool):
+  exec(open('/home/jpcanesin/Documents/3d/keyboard/build_native.py').read())
+Visibility is only saved from the GUI; files written by a headless run open with everything hidden.
+"""
+import csv
+import json
+import math
+import os
+import sys
+
+HERE = "/home/jpcanesin/Documents/3d/keyboard"
+sys.path.insert(0, HERE)
+import FreeCAD as App  # noqa: E402
+import Part  # noqa: E402
+import Draft  # noqa: E402
+import keycap  # noqa: E402
+
+V = App.Vector
+PITCH = 19.05
+
+# Set-wide values: name -> (description, value source key in the fitted params or DEFAULTS)
+SET_FIELDS = [
+    ("wall", "wall thickness, horizontal"),
+    ("lip_height", "straight base height before the slant"),
+    ("lip_radius", "corner radius of the straight base"),
+    ("corner_radius", "outer vertical corner radius"),
+    ("top_thickness", "top thickness, normal to the tilted top"),
+    ("block_fillet", "stem edge rounding"),
+    ("rib_thickness", "rib thickness"),
+    ("rib_fillet", "rib bottom edge rounding"),
+    ("side_inner", "horizontal stems: half the gap between them"),
+    ("side_len", "horizontal stems: size pointing to the center"),
+    ("side_width", "horizontal stems: size across"),
+    ("side_tip", "horizontal stems: base to stem tip"),
+    ("rib_gap_sides", "horizontal stems: tip to rib start"),
+    ("end_inner", "vertical stems: half the gap between them"),
+    ("end_len", "vertical stems: size pointing to the center"),
+    ("end_width", "vertical stems: size across"),
+    ("end_tip", "vertical stems: base to stem tip"),
+    ("rib_gap_back", "back vertical stem: tip to rib start"),
+    ("rib_gap_front", "front vertical stem: tip to rib start"),
+    ("top_margin", "construction: walls built this far above the top"),
+    ("bottom_margin", "construction: cavity cut starts this far below the rim"),
+    ("rib_overlap", "construction: rib reaches this far into its stem"),
+    ("cutter_min_size", "construction: minimum cutter size"),
+    ("cutter_length_factor", "construction: dish cylinder length / largest footprint side"),
+]
+
+SHAPE_FIELDS = [
+    ("base_w", "footprint length, left-right"),
+    ("base_d", "footprint width, front-back"),
+    ("top_height", "dish bottom height at the key center"),
+    ("tilt", "top tilt in degrees; positive = back (-Y) higher"),
+    ("dish_sag", "dish dip at the end of the straight part of the higher top edge"),
+    ("draft_sides", "left/right wall slant from vertical, degrees"),
+    ("draft_back", "back wall slant, degrees"),
+    ("draft_front", "front wall slant, degrees"),
+    ("stem_rotated", "1 = stems/ribs turned 90 degrees, 0 = normal"),
+]
+
+# Derived cells: (alias, formula). Formulas may use any alias above or below them.
+DERIVED = [
+    ("kx", "tan(draft_sides)"),
+    ("kb", "tan(draft_back)"),
+    ("kf", "tan(draft_front)"),
+    ("half_w", "base_w / 2 + kx * lip_height"),     # wall planes at z=0 (they pass the base band at lip_height)
+    ("half_b", "base_d / 2 + kb * lip_height"),
+    ("half_f", "base_d / 2 + kf * lip_height"),
+    ("tan_tilt", "tan(abs(tilt))"),
+    ("cos_tilt", "cos(tilt)"),
+    ("sin_tilt", "sin(tilt)"),
+    ("edge_half", "tilt >= 0 ? half_b : half_f"),   # the higher top edge
+    ("edge_k", "tilt >= 0 ? kb : kf"),
+    ("edge_z", "(top_height + edge_half * tan_tilt) / (1 + edge_k * tan_tilt)"),
+    ("edge_run", "half_w - kx * edge_z - corner_radius"),
+    ("dish_radius", "(edge_run ^ 2 + dish_sag ^ 2) / (2 * dish_sag)"),
+    ("full_sag", "dish_radius > base_w / 2 ? dish_radius - sqrt(dish_radius ^ 2 - (base_w / 2) ^ 2) : dish_radius"),
+    ("wall_top", "top_height + base_d / 2 * tan_tilt + full_sag + top_margin"),
+    ("cutter_len", "cutter_length_factor * (base_w > base_d ? base_w : base_d)"),
+    ("cutter_size", "cutter_min_size > cutter_len ? cutter_min_size : cutter_len"),
+    ("ceil_z", "top_height - top_thickness / cos_tilt"),
+    ("reach", "half_w > (half_b > half_f ? half_b : half_f) ? half_w : (half_b > half_f ? half_b : half_f)"),
+]
+
+
+def set_values(p):
+    return dict(
+        wall=p["wall"], lip_height=p["lip_height"], lip_radius=p["lip_radius"], corner_radius=p["corner_radius"],
+        top_thickness=p["top_thickness"], block_fillet=p["block_fillet"], rib_thickness=p["rib_thickness"],
+        rib_fillet=p["rib_fillet"],
+        side_inner=p["side_block"]["inner"], side_len=p["side_block"]["len"], side_width=p["side_block"]["width"],
+        side_tip=p["side_block"]["bottom"], rib_gap_sides=p["rib_gap_sides"],
+        end_inner=p["end_block"]["inner"], end_len=p["end_block"]["len"], end_width=p["end_block"]["width"],
+        end_tip=p["end_block"]["bottom"], rib_gap_back=p["rib_gap_back"], rib_gap_front=p["rib_gap_front"],
+        top_margin=p["top_margin"], bottom_margin=p["bottom_margin"], rib_overlap=p["rib_overlap"],
+        cutter_min_size=p["cutter_min_size"], cutter_length_factor=p["cutter_length_factor"],
+    )
+
+
+def dish_sag(p):
+    """Exact dish_sag for a fitted shape, so the native dish radius equals keycap.py's."""
+    R = p["dish_radius"] or keycap._radius_for_depth(p)
+    hw, hb, hf, kx, kb, kf = keycap._walls(p)
+    tt = math.tan(math.radians(abs(p["tilt"])))
+    half, k = (hb, kb) if p["tilt"] >= 0 else (hf, kf)
+    z_e = (p["top_height"] + half * tt) / (1 + k * tt)
+    run = hw - kx * z_e - p["corner_radius"]
+    return R - math.sqrt(R * R - run * run)
+
+
+def write_sheet(sheet, rows, start=1):
+    """rows: (alias, value or '=formula', description). Column A label, B value, C note."""
+    for i, (alias, value, note) in enumerate(rows, start):
+        sheet.set("A%d" % i, alias)
+        sheet.set("B%d" % i, str(value))
+        sheet.setAlias("B%d" % i, alias)
+        sheet.set("C%d" % i, note)
+    return start + len(rows)
+
+
+def expr(obj, prop, formula):
+    obj.setExpression(prop, formula)
+
+
+def rect(doc, name, x, y, z, length, height, fillet):
+    """Draft rectangle wire; all arguments are expressions over Params."""
+    r = Draft.make_rectangle(1, 1)
+    r.Label = name
+    r.MakeFace = False
+    expr(r, "Length", length)
+    expr(r, "Height", height)
+    expr(r, "FilletRadius", fillet)
+    expr(r, "Placement.Base.x", x)
+    expr(r, "Placement.Base.y", y)
+    expr(r, "Placement.Base.z", z)
+    return r
+
+
+def box_edges():
+    """Edge names of a box: bottom edges, vertical edges, bottom edges along X and along Y."""
+    b = Part.makeBox(1, 2, 3)
+    bottom, vertical, along_x, along_y = [], [], [], []
+    for i, e in enumerate(b.Edges, 1):
+        p0, p1 = e.Vertexes[0].Point, e.Vertexes[1].Point
+        if p0.z == 0 and p1.z == 0:
+            bottom.append("Edge%d" % i)
+            (along_x if p0.y == p1.y else along_y).append("Edge%d" % i)
+        elif p0.x == p1.x and p0.y == p1.y:
+            vertical.append("Edge%d" % i)
+    return bottom, vertical, along_x, along_y
+
+
+BOTTOM, VERTICAL, ALONG_X, ALONG_Y = box_edges()
+
+
+def filleted_box(doc, name, length, width, height, x, y, z, radius, edges):
+    body = doc.addObject("PartDesign::Body", name)
+    box = body.newObject("PartDesign::AdditiveBox", name + "Box")
+    expr(box, "Length", length)
+    expr(box, "Width", width)
+    expr(box, "Height", height)
+    fil = body.newObject("PartDesign::Fillet", name + "Fillet")
+    fil.Base = (box, edges)
+    expr(fil, "Radius", radius)
+    expr(body, "Placement.Base.x", x)
+    expr(body, "Placement.Base.y", y)
+    expr(body, "Placement.Base.z", z)
+    return body
+
+
+def tilted_box(doc, name, pivot_z, start_z):
+    """Half-space box above the plane at start_z, tilted about X around (0, 0, pivot_z).
+    Its corner (-S/2, -S/2, start_z) is rotated by -tilt around the pivot."""
+    b = doc.addObject("Part::Box", name)
+    for prop in ("Length", "Width", "Height"):
+        expr(b, prop, "Params.cutter_size")
+    rel = "(%s - %s)" % (start_z, pivot_z)
+    expr(b, "Placement.Base.x", "-Params.cutter_size / 2")
+    expr(b, "Placement.Base.y", "-Params.cutter_size / 2 * Params.cos_tilt + %s * Params.sin_tilt" % rel)
+    expr(b, "Placement.Base.z", "%s + Params.cutter_size / 2 * Params.sin_tilt + %s * Params.cos_tilt" % (pivot_z, rel))
+    b.Placement.Rotation.Axis = V(1, 0, 0)
+    expr(b, "Placement.Rotation.Angle", "-Params.tilt")
+    return b
+
+
+def show_only(doc, objs):
+    """Show objs and hide everything else; needs the GUI to be stored in the file."""
+    if not App.GuiUp:
+        return
+    import FreeCADGui
+    gdoc = FreeCADGui.getDocument(doc.Name)
+    for o in doc.Objects:
+        vo = gdoc.getObject(o.Name)
+        if vo is not None and hasattr(vo, "Visibility"):
+            vo.Visibility = o in objs
+
+
+def build_shape(path, shape_id, p, set_doc_name):
+    doc = App.newDocument(shape_id.replace("-", "_"))
+    doc.saveAs(path)  # cross-document expressions need a saved owner document
+    sheet = doc.addObject("Spreadsheet::Sheet", "Params")
+    rows = [(a, "=%s#Set.%s" % (set_doc_name, a), "from set.FCStd: " + d) for a, d in SET_FIELDS]
+    vals = dict(base_w=p["base_w"], base_d=p["base_d"], top_height=p["top_height"], tilt=p["tilt"],
+                dish_sag=dish_sag(p), draft_sides=p["draft_sides"], draft_back=p["draft_back"],
+                draft_front=p["draft_front"], stem_rotated=1 if p.get("stem_rotated") else 0)
+    rows += [(a, repr(round(vals[a], 6)), d) for a, d in SHAPE_FIELDS]
+    rows += [(a, "=" + f, "derived") for a, f in DERIVED]
+    write_sheet(sheet, rows)
+    doc.recompute()
+
+    P = "Params."
+    # outer body: ruled loft between rounded rects, clipped by the straight base band
+    def outer_at(z):
+        return dict(x="-(%shalf_w - %skx * %s)" % (P, P, z), y="-(%shalf_b - %skb * %s)" % (P, P, z), z=z,
+                    length="2 * (%shalf_w - %skx * %s)" % (P, P, z),
+                    height="%shalf_b - %skb * %s + %shalf_f - %skf * %s" % (P, P, z, P, P, z),
+                    fillet=P + "corner_radius")
+    lo = rect(doc, "OuterBottom", **outer_at("0"))
+    hi = rect(doc, "OuterTop", **outer_at(P + "wall_top"))
+    loft = doc.addObject("Part::Loft", "OuterLoft")
+    loft.Sections = [lo, hi]
+    loft.Solid, loft.Ruled = True, True
+    lip = rect(doc, "BaseRect", "-%sbase_w / 2" % P, "-%sbase_d / 2" % P, "0", P + "base_w", P + "base_d",
+               P + "lip_radius")
+    band = doc.addObject("Part::Extrusion", "BaseBand")
+    band.Base = lip
+    band.Solid = True
+    band.DirMode = "Custom"
+    band.Dir = V(0, 0, 1)
+    expr(band, "LengthFwd", P + "wall_top")
+    outer = doc.addObject("Part::MultiCommon", "Outer")
+    outer.Shapes = [loft, band]
+
+    # dish: cylinder along the tilted Y axis; its lowest line passes through (0, 0, top_height)
+    cyl = doc.addObject("Part::Cylinder", "DishCylinder")
+    expr(cyl, "Radius", P + "dish_radius")
+    expr(cyl, "Height", P + "cutter_len")
+    expr(cyl, "Placement.Base.x", "0")
+    expr(cyl, "Placement.Base.y", "%sdish_radius * %ssin_tilt - %scutter_len / 2 * %scos_tilt" % (P, P, P, P))
+    expr(cyl, "Placement.Base.z",
+         "%stop_height + %sdish_radius * %scos_tilt + %scutter_len / 2 * %ssin_tilt" % (P, P, P, P, P))
+    cyl.Placement.Rotation.Axis = V(1, 0, 0)
+    expr(cyl, "Placement.Rotation.Angle", "-90 - %stilt" % P)
+    above = tilted_box(doc, "AboveDish", P + "top_height", "(%stop_height + %sdish_radius)" % (P, P))
+    tool = doc.addObject("Part::MultiFuse", "DishTool")
+    tool.Shapes = [cyl, above]
+    outer_cut = doc.addObject("Part::Cut", "OuterCut")
+    outer_cut.Base, outer_cut.Tool = outer, tool
+
+    # cavity: inner drafted body with sharp corners, below the ceiling plane
+    def inner_at(z):
+        return dict(x="-(%shalf_w - %swall - %skx * %s)" % (P, P, P, z),
+                    y="-(%shalf_b - %swall - %skb * %s)" % (P, P, P, z), z=z,
+                    length="2 * (%shalf_w - %swall - %skx * %s)" % (P, P, P, z),
+                    height="%shalf_b - %swall - %skb * %s + %shalf_f - %swall - %skf * %s" % (P, P, P, z, P, P, P, z),
+                    fillet="0")
+    ilo = rect(doc, "InnerBottom", **inner_at("(-%sbottom_margin)" % P))
+    ihi = rect(doc, "InnerTop", **inner_at(P + "wall_top"))
+    iloft = doc.addObject("Part::Loft", "InnerLoft")
+    iloft.Sections = [ilo, ihi]
+    iloft.Solid, iloft.Ruled = True, True
+    ceil = tilted_box(doc, "AboveCeiling", P + "ceil_z", P + "ceil_z")
+    cavity = doc.addObject("Part::Cut", "Cavity")
+    cavity.Base, cavity.Tool = iloft, ceil
+    shell = doc.addObject("Part::Cut", "Shell")
+    shell.Base, shell.Tool = outer_cut, cavity
+
+    # stems and ribs in the normal orientation; a clone turns them when stem_rotated = 1
+    feats = []
+    for s, tag in ((1, "Pos"), (-1, "Neg")):
+        sx = "%s(%sside_inner)" % ("" if s > 0 else "-", P)
+        feats.append(filleted_box(
+            doc, "SideStem" + tag, P + "side_len", P + "side_width", "%swall_top - %sside_tip" % (P, P),
+            sx if s > 0 else "-(%sside_inner + %sside_len)" % (P, P), "-%sside_width / 2" % P, P + "side_tip",
+            P + "block_fillet", BOTTOM + VERTICAL))
+        rib_start = "(%sside_inner + %sside_len - %srib_overlap)" % (P, P, P)
+        feats.append(filleted_box(
+            doc, "SideRib" + tag, "%sreach - %s" % (P, rib_start), P + "rib_thickness",
+            "%swall_top - %sside_tip - %srib_gap_sides" % (P, P, P),
+            rib_start if s > 0 else "-" + P + "reach", "-%srib_thickness / 2" % P,
+            "%sside_tip + %srib_gap_sides" % (P, P), P + "rib_fillet", ALONG_X))
+        feats.append(filleted_box(
+            doc, "EndStem" + tag, P + "end_width", P + "end_len", "%swall_top - %send_tip" % (P, P),
+            "-%send_width / 2" % P, P + "end_inner" if s > 0 else "-(%send_inner + %send_len)" % (P, P),
+            P + "end_tip", P + "block_fillet", BOTTOM + VERTICAL))
+        rib_start = "(%send_inner + %send_len - %srib_overlap)" % (P, P, P)
+        gap = P + ("rib_gap_front" if s > 0 else "rib_gap_back")
+        feats.append(filleted_box(
+            doc, "EndRib" + tag, P + "rib_thickness", "%sreach - %s" % (P, rib_start),
+            "%swall_top - %send_tip - %s" % (P, P, gap),
+            "-%srib_thickness / 2" % P, rib_start if s > 0 else "-" + P + "reach",
+            "%send_tip + %s" % (P, gap), P + "rib_fillet", ALONG_Y))
+    mount = doc.addObject("Part::MultiFuse", "Mount")
+    mount.Shapes = feats
+    turned = Draft.make_clone(mount)
+    turned.Label = "MountTurned"
+    turned.Placement.Rotation.Axis = V(0, 0, 1)
+    expr(turned, "Placement.Rotation.Angle", "%sstem_rotated * 90" % P)
+    trimmed = doc.addObject("Part::MultiCommon", "MountTrimmed")
+    trimmed.Shapes = [turned, outer_cut]
+
+    result = doc.addObject("Part::MultiFuse", "Keycap")
+    result.Shapes = [shell, trimmed]
+    result.Refine = True
+    doc.recompute()
+    show_only(doc, [result])
+    doc.save()
+    return doc, result
+
+
+def main():
+    fitted = {}
+    for r in csv.DictReader(open(os.path.join(HERE, "fitted_shapes.csv"))):
+        p = json.loads(r["params"])
+        for sid in r["shape_ids"].split():
+            fitted[sid] = p
+    layout = list(csv.DictReader(open(os.path.join(HERE, "layout.csv"))))
+
+    # shared values: identical across shapes, taken from any fitted shape over keycap.DEFAULTS
+    first = dict(keycap.DEFAULTS)
+    first.update(next(iter(fitted.values())))
+    set_doc = App.newDocument("set")
+    sheet = set_doc.addObject("Spreadsheet::Sheet", "Set")
+    sv = set_values(first)
+    write_sheet(sheet, [(a, repr(round(sv[a], 6)), d) for a, d in SET_FIELDS])
+    set_doc.recompute()
+    set_doc.saveAs(os.path.join(HERE, "set.FCStd"))
+
+    out = os.path.join(HERE, "shapes")
+    os.makedirs(out, exist_ok=True)
+    built = {}
+    for k in layout:
+        sid = k["shape_id"]
+        key = json.dumps(fitted[sid], sort_keys=True)
+        if key in built:
+            continue
+        p = dict(keycap.DEFAULTS)
+        p.update(fitted[sid])
+        doc, result = build_shape(os.path.join(out, sid + ".FCStd"), sid, p, set_doc.Name)
+        ref = keycap.make_keycap(**p)
+        dv = abs(result.Shape.Volume - ref.Volume)
+        print("native", sid, "valid", result.Shape.isValid(), "solids", len(result.Shape.Solids),
+              "volume diff %.4f mm3" % dv, flush=True)
+        built[key] = result
+
+    master = App.newDocument("Keyboard")
+    master.saveAs(os.path.join(HERE, "keyboard.FCStd"))
+    for k in layout:
+        x = (float(k["x_u"]) + float(k["w_u"]) / 2) * PITCH
+        y = -(float(k["y_u"]) + float(k["h_u"]) / 2) * PITCH  # rows run toward the user (-Y)
+        link = master.addObject("App::Link", "Key")
+        link.setLink(built[json.dumps(fitted[k["shape_id"]], sort_keys=True)])
+        link.Label = "%s_%s" % (k["row"], k["key"])
+        link.Placement = App.Placement(V(x, y, 0), App.Rotation())
+    master.recompute()
+    show_only(master, [o for o in master.Objects if o.TypeId == "App::Link"])
+    master.save()
+    print("master: keyboard.FCStd with", len(layout), "linked keys", flush=True)
+
+
+main()
