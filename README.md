@@ -88,7 +88,7 @@ multi-part object (they share coordinates) and assign the legend its own filamen
   arrangement turned 90° (`stem_rotated = 1`).
 - `tilt` > 0 raises the back. Rows R3–R6 have the back edge higher, R1–R2 the front edge.
 - Layout positions are on a 19.05 mm grid (full-size ANSI, 104 keys, with this set's
-  bottom row: 1.5u Ctrl, 1.25u Win/Alt/Fn, 5.75u Space).
+  bottom row: 1.5u Ctrl, 1.25u Win/Alt/Menu, 5.75u Space).
 
 ## Measurements
 

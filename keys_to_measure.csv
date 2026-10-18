@@ -23,7 +23,7 @@ R6-1,Left Ctrl,R6 (bottom),18,27.5,7.3,8.1,9.8,10.6,14.3,22.8,,,no,stems ROTATED
 R6-2,Left Win,R6 (bottom),18,22.8,7.3,8.1,9.8,10.6,14.3,17.6,,,no,1.25u
 R6-3,Left Alt,R6 (bottom),18,22.8,7.3,8.1,9.8,10.6,14.3,17.6,,,no,1.25u
 R6-4,Space,R6 (bottom),18,109.3,7.3,8.1,9.8,10.6,14.3,103.5,,,yes,5.75u; measure stab mount positions from center
-R6-5,Fn (right),R6 (bottom),18,22.8,7.3,8.1,9.8,10.6,14.3,17.6,,,no,confirmed identical to left Win/Alt; right Alt/Win/Fn/Ctrl reuse left-side shapes - no need to measure
+R6-5,Menu (right),R6 (bottom),18,22.8,7.3,8.1,9.8,10.6,14.3,17.6,,,no,confirmed identical to left Win/Alt; right Alt/Win/Menu/Ctrl reuse left-side shapes - no need to measure
 NAV-1,Insert,nav cluster,18,18,10.8,11.8,10.3,11,14,12.8,,,no,skip if board has no nav cluster
 NAV-2,Delete,nav cluster,18,18,8.5,9.3,9.2,9.6,14,12.8,,,no,skip if board has no nav cluster
 NAV-3,Up arrow,nav cluster,18,18,7.5,8.3,9.6,10.1,14,12.8,,,no,skip if board has no arrows
