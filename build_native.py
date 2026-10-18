@@ -97,9 +97,17 @@ DERIVED = [
 ]
 
 
+LEGEND_SET_FIELDS = [
+    ("font_file", "legend font file (path); point it at another .ttf/.otf to change the font"),
+    ("legend_size", "default legend cap height"),
+    ("line_gap", "gap between the two lines of a stacked legend"),
+    ("legend_depth", "inlay depth, measured perpendicular to the dish"),
+]
+
 SET_DEFAULTS = dict(
     lip_radius=1.5, block_fillet=0.35, rib_fillet=0.25,
     top_margin=3.0, bottom_margin=1.0, rib_overlap=0.1, cutter_min_size=200.0, cutter_length_factor=4.0,
+    font_file=os.path.join(HERE, "fonts", "Inter-SemiBold.ttf"), legend_size=3.6, line_gap=1.0, legend_depth=0.4,
 )
 MEASURED = ["bottom_width", "bottom_length", "front_min", "front_max", "back_min", "back_max", "top_width", "top_length"]
 STEP = ["step_body_length", "step_height"]  # optional: stepped keys (e.g. a stepped Caps Lock)
@@ -361,6 +369,105 @@ def build_shape(path, shape_id, vals, set_doc_name):
     return doc, result
 
 
+# shape values each key's Legend sheet mirrors, to place the text and follow the dish
+SHAPE_REFS = ["body_dx", "half_w", "kx", "half_b", "kb", "half_f", "kf", "top_height", "tilt", "sin_tilt",
+              "cos_tilt", "dish_radius", "cutter_len", "wall_top", "bottom_margin"]
+JUSTIFY = {"center": ("Middle-Center", 0, 0), "left": ("Middle-Left", -1, 0), "right": ("Middle-Right", 1, 0),
+           "top": ("Top-Center", 0, 1)}
+
+
+def build_key(path, doc_name, label, shape_result, set_doc_name, lg):
+    """One physical key: its shape's Keycap with the legend inlaid. Results: Cap and Inlay
+    (or just Cap, a link to the shape, when the key has no legend)."""
+    doc = App.newDocument(doc_name)
+    doc.saveAs(path)
+    body = doc.addObject("App::Link", "Body")
+    body.setLink(shape_result)
+    lines = [t for t in (lg["line1"], lg["line2"]) if t]
+    if not lines:
+        body.Label = "Cap"
+        doc.recompute()
+        show_only(doc, [body])
+        doc.save()
+        return doc, body, None
+    justify, ax, ay = JUSTIFY[lg["align"]]
+    S = shape_result.Document.Name
+    rows = [(a, "=%s#Set.%s" % (set_doc_name, a), "from set.FCStd") for a, _ in LEGEND_SET_FIELDS]
+    rows += [(a, "=%s#Params.%s" % (S, a), "from the shape") for a in SHAPE_REFS]
+    rows += [("line1", "'" + lines[0], "top line (or the only line)"),
+             ("line2", "'" + (lines[1] if len(lines) > 1 else ""), "bottom line of a stacked legend"),
+             ("align_x", repr(ax), "-1 = left margin, 0 = centered, 1 = right margin"),
+             ("align_y", repr(ay), "1 = margin from the front (top of the legend) edge, 0 = centered"),
+             ("margin", repr(float(lg["margin_mm"] or 0)), "distance from the aligned edge"),
+             ("size", lg["size_mm"] or "=legend_size", "cap height")]
+    rows += [(a, "=" + f, "derived") for a, f in [
+        ("edge_x", "half_w - kx * top_height"),             # top outline, measured at the dish bottom height
+        ("left_edge", "body_dx - edge_x"),
+        ("right_edge", "body_dx + edge_x"),
+        ("back_edge", "-(half_b - kb * top_height)"),
+        ("front_edge", "half_f - kf * top_height"),
+        ("anchor_x", "align_x < 0 ? left_edge + margin : (align_x > 0 ? right_edge - margin : body_dx)"),
+        ("anchor_y", "align_y > 0 ? front_edge - margin : (back_edge + front_edge) / 2"),
+        ("line_step", "size + line_gap"),
+    ]]
+    sheet = doc.addObject("Spreadsheet::Sheet", "Legend")
+    write_sheet(sheet, rows)
+    doc.recompute()
+
+    L = "Legend."
+    prisms = []
+    for i in range(len(lines)):
+        t = Draft.make_shapestring(String="x", FontFile=App.getDocument(set_doc_name).Set.get("font_file"), Size=1.0)
+        t.Label = "Line%d" % (i + 1)
+        t.JustificationReference = "Cap Height"
+        t.Justification = justify
+        expr(t, "FontFile", L + "font_file")
+        expr(t, "String", L + "line%d" % (i + 1))
+        expr(t, "Size", L + "size")
+        expr(t, "Placement.Base.x", L + "anchor_x")
+        offset = "" if len(lines) == 1 else (" + %sline_step / 2" % L if i == 0 else " - %sline_step / 2" % L)
+        expr(t, "Placement.Base.y", L + "anchor_y" + offset)
+        ext = doc.addObject("Part::Extrusion", "Line%dPrism" % (i + 1))
+        ext.Base = t
+        ext.Solid = True
+        ext.DirMode = "Custom"
+        ext.Dir = V(0, 0, 1)
+        expr(ext, "LengthFwd", L + "wall_top")
+        prisms.append(ext)
+
+    # the layer within legend_depth below the dish: between the dish cylinder and one legend_depth larger
+    def dish_cylinder(name, radius):
+        c = doc.addObject("Part::Cylinder", name)
+        expr(c, "Radius", radius)
+        expr(c, "Height", L + "cutter_len")
+        expr(c, "Placement.Base.x", L + "body_dx")
+        expr(c, "Placement.Base.y", "%sdish_radius * %ssin_tilt - %scutter_len / 2 * %scos_tilt" % (L, L, L, L))
+        expr(c, "Placement.Base.z",
+             "%stop_height + %sdish_radius * %scos_tilt + %scutter_len / 2 * %ssin_tilt" % (L, L, L, L, L))
+        c.Placement.Rotation.Axis = V(1, 0, 0)
+        expr(c, "Placement.Rotation.Angle", "-90 - %stilt" % L)
+        return c
+    layer = doc.addObject("Part::Cut", "InlayLayer")
+    layer.Base = dish_cylinder("DepthCylinder", "%sdish_radius + %slegend_depth" % (L, L))
+    layer.Tool = dish_cylinder("DishCylinder", L + "dish_radius")
+    text = prisms[0]
+    if len(prisms) > 1:
+        text = doc.addObject("Part::MultiFuse", "TextPrisms")
+        text.Shapes = prisms
+    legend = doc.addObject("Part::MultiCommon", "Inlay")
+    legend.Shapes = [text, layer]
+    cap = doc.addObject("Part::Cut", "Cap")
+    cap.Base, cap.Tool = body, legend
+    cap.Refine = True
+    doc.recompute()
+    show_only(doc, [cap, legend])
+    if App.GuiUp:
+        import FreeCADGui
+        FreeCADGui.getDocument(doc.Name).getObject(legend.Name).ShapeColor = (0.95, 0.95, 0.95)
+    doc.save()
+    return doc, cap, legend
+
+
 def main():
     set_vals = read_set()
     shapes = read_shapes()
@@ -368,7 +475,8 @@ def main():
 
     set_doc = App.newDocument("set")
     sheet = set_doc.addObject("Spreadsheet::Sheet", "Set")
-    write_sheet(sheet, [(a, repr(set_vals[a]), d) for a, d in SET_FIELDS])
+    write_sheet(sheet, [(a, set_vals[a] if isinstance(set_vals[a], str) else repr(set_vals[a]), d)
+                        for a, d in SET_FIELDS + LEGEND_SET_FIELDS])
     set_doc.recompute()
     set_doc.saveAs(os.path.join(HERE, "set.FCStd"))
 
@@ -379,7 +487,8 @@ def main():
 
     # one shape file per distinct measurement; keys with identical measurements share it
     def signature(sid):
-        return json.dumps([shapes[sid]["m"], shapes[sid]["rotated"], set_vals], sort_keys=True)
+        shape_set = {a: set_vals[a] for a, _ in SET_FIELDS}  # legend settings don't affect the shape
+        return json.dumps([shapes[sid]["m"], shapes[sid]["rotated"], shape_set], sort_keys=True)
     groups = {}
     for k in layout:
         groups.setdefault(signature(k["shape_id"]), []).append(k["shape_id"])
@@ -419,15 +528,32 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
+    # one file per physical key: the shape with its legend inlaid
+    legends = {r["key"]: r for r in csv.DictReader(open(os.path.join(HERE, "legends.csv")))}
+    key_dir = os.path.join(HERE, "keys")
+    os.makedirs(key_dir, exist_ok=True)
+    parts = []
+    for i, k in enumerate(layout, 1):
+        name = "%03d_%s_%s" % (i, k["row"], k["key"])
+        doc, cap, legend = build_key(os.path.join(key_dir, name + ".FCStd"), "K%03d" % i, name,
+                                     built[k["shape_id"]], set_doc.Name, legends[k["key"]])
+        parts.append((k, cap, legend))
+        if legend is not None and not (cap.Shape.isValid() and legend.Shape.isValid() and legend.Shape.Volume > 0):
+            print("WARNING legend problem on", name, flush=True)
+    print("keys:", len(parts), "key files in", key_dir, flush=True)
+
     master = App.newDocument("Keyboard")
     master.saveAs(os.path.join(HERE, "keyboard.FCStd"))
-    for k in layout:
+    for k, cap, legend in parts:
         x = (float(k["x_u"]) + float(k["w_u"]) / 2) * PITCH
         y = -(float(k["y_u"]) + float(k["h_u"]) / 2) * PITCH  # rows run toward the user (-Y)
-        link = master.addObject("App::Link", "Key")
-        link.setLink(built[k["shape_id"]])
-        link.Label = "%s_%s" % (k["row"], k["key"])
-        link.Placement = App.Placement(V(x, y, 0), App.Rotation())
+        for obj, suffix in ((cap, ""), (legend, "_legend")):
+            if obj is None:
+                continue
+            link = master.addObject("App::Link", "Key")
+            link.setLink(obj)
+            link.Label = "%s_%s%s" % (k["row"], k["key"], suffix)
+            link.Placement = App.Placement(V(x, y, 0), App.Rotation())
     master.recompute()
     show_only(master, [o for o in master.Objects if o.TypeId == "App::Link"])
     master.save()
