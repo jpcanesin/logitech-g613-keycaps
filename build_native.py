@@ -1,12 +1,12 @@
-"""Generate native, fully parametric FreeCAD keycaps.
+"""Generate the native, fully parametric FreeCAD keycap set from the measurements.
 
-Writes set.FCStd (spreadsheet "Set" with the values shared by the whole set), one
-shapes/<shape_id>.FCStd per distinct shape (spreadsheet "Params" + an expression-driven
-model whose result is the object "Keycap") and keyboard.FCStd (every key linked to its
-shape at its layout position). After generation the .FCStd files need neither Python
-nor this script: edit a cell in Set or Params and recompute.
-
-Per-shape values come from fitted_shapes.csv (written by build_keyboard.py).
+Reads set_measurements.csv, keys_to_measure.csv and layout.csv. Writes set.FCStd
+(spreadsheet "Set" with the values shared by the whole set), one shapes/<shape_id>.FCStd
+per distinct shape (spreadsheet "Params" + an expression-driven model whose result is the
+object "Keycap"), keyboard.FCStd (every key linked to its shape at its layout position)
+and fitted_shapes.csv (fit cache: a shape is refit only when its measurements or the set
+values change). After generation the .FCStd files need neither Python nor this script:
+edit a cell in Set or Params and recompute. Rerunning overwrites them.
 
 Run it inside the FreeCAD GUI (Python console, or the MCP execute_code tool):
   exec(open('/home/jpcanesin/Documents/3d/keyboard/build_native.py').read())
@@ -14,7 +14,6 @@ Visibility is only saved from the GUI; files written by a headless run open with
 """
 import csv
 import json
-import math
 import os
 import sys
 
@@ -23,12 +22,13 @@ sys.path.insert(0, HERE)
 import FreeCAD as App  # noqa: E402
 import Part  # noqa: E402
 import Draft  # noqa: E402
-import keycap  # noqa: E402
+import fit_profile  # noqa: E402
 
 V = App.Vector
 PITCH = 19.05
 
-# Set-wide values: name -> (description, value source key in the fitted params or DEFAULTS)
+# Set-wide values (alias, description). Measured ones come from set_measurements.csv,
+# the rest from SET_DEFAULTS.
 SET_FIELDS = [
     ("wall", "wall thickness, horizontal"),
     ("lip_height", "straight base height before the slant"),
@@ -93,29 +93,36 @@ DERIVED = [
 ]
 
 
-def set_values(p):
-    return dict(
-        wall=p["wall"], lip_height=p["lip_height"], lip_radius=p["lip_radius"], corner_radius=p["corner_radius"],
-        top_thickness=p["top_thickness"], block_fillet=p["block_fillet"], rib_thickness=p["rib_thickness"],
-        rib_fillet=p["rib_fillet"],
-        side_inner=p["side_block"]["inner"], side_len=p["side_block"]["len"], side_width=p["side_block"]["width"],
-        side_tip=p["side_block"]["bottom"], rib_gap_sides=p["rib_gap_sides"],
-        end_inner=p["end_block"]["inner"], end_len=p["end_block"]["len"], end_width=p["end_block"]["width"],
-        end_tip=p["end_block"]["bottom"], rib_gap_back=p["rib_gap_back"], rib_gap_front=p["rib_gap_front"],
-        top_margin=p["top_margin"], bottom_margin=p["bottom_margin"], rib_overlap=p["rib_overlap"],
-        cutter_min_size=p["cutter_min_size"], cutter_length_factor=p["cutter_length_factor"],
+SET_DEFAULTS = dict(
+    lip_radius=1.5, block_fillet=0.35, rib_fillet=0.25,
+    top_margin=3.0, bottom_margin=1.0, rib_overlap=0.1, cutter_min_size=200.0, cutter_length_factor=4.0,
+)
+MEASURED = ["bottom_width", "bottom_length", "front_min", "front_max", "back_min", "back_max", "top_width", "top_length"]
+
+
+def read_set():
+    v = {r["parameter"]: float(r["key_1"]) for r in csv.DictReader(open(os.path.join(HERE, "set_measurements.csv")))}
+    out = dict(SET_DEFAULTS)
+    out.update(
+        wall=v["wall_thickness_mm"], lip_height=v["straight_base_height_mm"], corner_radius=v["corner_radius_mm"],
+        top_thickness=v["top_thickness_mm"], rib_thickness=v["rib_thickness_mm"],
+        side_inner=v["horiz_stem_gap_mm"] / 2, side_len=v["horiz_stem_length_mm"],
+        side_width=v["horiz_stem_width_mm"], side_tip=v["horiz_stem_tip_from_base_mm"],
+        rib_gap_sides=v["horiz_stem_rib_gap_mm"],
+        end_inner=v["vert_stem_gap_mm"] / 2, end_len=v["vert_stem_length_mm"],
+        end_width=v["vert_stem_width_mm"], end_tip=v["vert_stem_tip_from_base_mm"],
+        rib_gap_back=v["vert_stem_rib_gap_mm"], rib_gap_front=v["vert_stem_rib_gap_mm"],
     )
+    return out
 
 
-def dish_sag(p):
-    """Exact dish_sag for a fitted shape, so the native dish radius equals keycap.py's."""
-    R = p["dish_radius"] or keycap._radius_for_depth(p)
-    hw, hb, hf, kx, kb, kf = keycap._walls(p)
-    tt = math.tan(math.radians(abs(p["tilt"])))
-    half, k = (hb, kb) if p["tilt"] >= 0 else (hf, kf)
-    z_e = (p["top_height"] + half * tt) / (1 + k * tt)
-    run = hw - kx * z_e - p["corner_radius"]
-    return R - math.sqrt(R * R - run * run)
+def read_shapes():
+    shapes = {}
+    for r in csv.DictReader(open(os.path.join(HERE, "keys_to_measure.csv"))):
+        if r["front_min_mm"]:
+            shapes[r["id"]] = dict(m={k: float(r[k + "_mm"]) for k in MEASURED},
+                                   rotated="ROTATED" in r["notes"].upper())
+    return shapes
 
 
 def write_sheet(sheet, rows, start=1):
@@ -205,15 +212,13 @@ def show_only(doc, objs):
             vo.Visibility = o in objs
 
 
-def build_shape(path, shape_id, p, set_doc_name):
+def build_shape(path, shape_id, vals, set_doc_name):
+    """vals: one value per SHAPE_FIELDS alias."""
     doc = App.newDocument(shape_id.replace("-", "_"))
     doc.saveAs(path)  # cross-document expressions need a saved owner document
     sheet = doc.addObject("Spreadsheet::Sheet", "Params")
     rows = [(a, "=%s#Set.%s" % (set_doc_name, a), "from set.FCStd: " + d) for a, d in SET_FIELDS]
-    vals = dict(base_w=p["base_w"], base_d=p["base_d"], top_height=p["top_height"], tilt=p["tilt"],
-                dish_sag=dish_sag(p), draft_sides=p["draft_sides"], draft_back=p["draft_back"],
-                draft_front=p["draft_front"], stem_rotated=1 if p.get("stem_rotated") else 0)
-    rows += [(a, repr(round(vals[a], 6)), d) for a, d in SHAPE_FIELDS]
+    rows += [(a, repr(vals[a]), d) for a, d in SHAPE_FIELDS]
     rows += [(a, "=" + f, "derived") for a, f in DERIVED]
     write_sheet(sheet, rows)
     doc.recompute()
@@ -319,39 +324,59 @@ def build_shape(path, shape_id, p, set_doc_name):
 
 
 def main():
-    fitted = {}
-    for r in csv.DictReader(open(os.path.join(HERE, "fitted_shapes.csv"))):
-        p = json.loads(r["params"])
-        for sid in r["shape_ids"].split():
-            fitted[sid] = p
+    set_vals = read_set()
+    shapes = read_shapes()
     layout = list(csv.DictReader(open(os.path.join(HERE, "layout.csv"))))
 
-    # shared values: identical across shapes, taken from any fitted shape over keycap.DEFAULTS
-    first = dict(keycap.DEFAULTS)
-    first.update(next(iter(fitted.values())))
     set_doc = App.newDocument("set")
     sheet = set_doc.addObject("Spreadsheet::Sheet", "Set")
-    sv = set_values(first)
-    write_sheet(sheet, [(a, repr(round(sv[a], 6)), d) for a, d in SET_FIELDS])
+    write_sheet(sheet, [(a, repr(set_vals[a]), d) for a, d in SET_FIELDS])
     set_doc.recompute()
     set_doc.saveAs(os.path.join(HERE, "set.FCStd"))
 
+    cache_path = os.path.join(HERE, "fitted_shapes.csv")
+    cache = {}
+    if os.path.exists(cache_path):
+        cache = {r["signature"]: json.loads(r["params"]) for r in csv.DictReader(open(cache_path))}
+
+    # one shape file per distinct measurement; keys with identical measurements share it
+    def signature(sid):
+        return json.dumps([shapes[sid]["m"], shapes[sid]["rotated"], set_vals], sort_keys=True)
+    groups = {}
+    for k in layout:
+        groups.setdefault(signature(k["shape_id"]), []).append(k["shape_id"])
     out = os.path.join(HERE, "shapes")
     os.makedirs(out, exist_ok=True)
-    built = {}
-    for k in layout:
-        sid = k["shape_id"]
-        key = json.dumps(fitted[sid], sort_keys=True)
-        if key in built:
-            continue
-        p = dict(keycap.DEFAULTS)
-        p.update(fitted[sid])
-        doc, result = build_shape(os.path.join(out, sid + ".FCStd"), sid, p, set_doc.Name)
-        ref = keycap.make_keycap(**p)
-        dv = abs(result.Shape.Volume - ref.Volume)
-        print("native", sid, "valid", result.Shape.isValid(), "solids", len(result.Shape.Solids),
-              "volume diff %.4f mm3" % dv, flush=True)
-        built[key] = result
+    built, rows = {}, []
+    for sig, sids in groups.items():
+        sid = sids[0]
+        shape = shapes[sid]
+        rot = 1 if shape["rotated"] else 0
+        if sig in cache:
+            vals = cache[sig]
+            doc, result = build_shape(os.path.join(out, sid + ".FCStd"), sid, vals, set_doc.Name)
+            note = "cached"
+        else:
+            m = shape["m"]
+            start = dict(base_w=m["bottom_length"], base_d=m["bottom_width"],
+                         top_height=(m["back_min"] + m["front_min"]) / 2, tilt=0.0,
+                         dish_sag=fit_profile.edge_depth(m), draft_sides=14.5, draft_back=14.5, draft_front=14.5,
+                         stem_rotated=rot)
+            doc, result = build_shape(os.path.join(out, sid + ".FCStd"), sid, start, set_doc.Name)
+            vals, pred = fit_profile.fit(doc, m)
+            vals["stem_rotated"] = rot
+            err = max(abs(pred[c] - m[c]) for c in ("front_min", "back_min", "top_width", "top_length"))
+            note = "fitted, worst error %.3f mm" % err
+        show_only(doc, [result])
+        doc.save()
+        print("shape", sid, note, "valid", result.Shape.isValid(), "solids", len(result.Shape.Solids), flush=True)
+        for x in sorted(set(sids)):
+            built[x] = result
+        rows.append(dict(shape_ids=" ".join(sorted(set(sids))), signature=sig, params=json.dumps(vals, sort_keys=True)))
+    with open(cache_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["shape_ids", "signature", "params"], lineterminator="\n")
+        w.writeheader()
+        w.writerows(rows)
 
     master = App.newDocument("Keyboard")
     master.saveAs(os.path.join(HERE, "keyboard.FCStd"))
@@ -359,7 +384,7 @@ def main():
         x = (float(k["x_u"]) + float(k["w_u"]) / 2) * PITCH
         y = -(float(k["y_u"]) + float(k["h_u"]) / 2) * PITCH  # rows run toward the user (-Y)
         link = master.addObject("App::Link", "Key")
-        link.setLink(built[json.dumps(fitted[k["shape_id"]], sort_keys=True)])
+        link.setLink(built[k["shape_id"]])
         link.Label = "%s_%s" % (k["row"], k["key"])
         link.Placement = App.Placement(V(x, y, 0), App.Rotation())
     master.recompute()

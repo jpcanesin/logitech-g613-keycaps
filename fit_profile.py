@@ -1,18 +1,17 @@
-"""Fit keycap.py parameters to caliper measurements (see keys_to_measure.csv).
+"""Fit a native keycap model (a shapes/*.FCStd document) to caliper measurements.
 
-Measurements: bottom width (front-back) and length (left-right), min/max height at the
-middle/corners of the front and back top edges, top width and top length.
-Fitted: top_height and tilt (from the two mins), side draft (from top length), one shared
-front/back draft (from top width). The dish depth is the higher edge's max - min directly.
+Measurements (keys_to_measure.csv): bottom width (front-back) and length (left-right),
+min/max height at the middle/corners of the front and back top edges, top width and length.
+The fit edits the document's Params cells and recomputes: top_height and tilt from the two
+mins, dish_sag from the higher edge's max - min, draft_sides from the top length and one
+shared front/back draft from the top width.
 """
 import math
-import keycap
 
 
-def measure(**p):
-    """Simulated caliper readings on a generated key; -Y is the back edge."""
-    s = keycap.make_keycap(**p)
-    top = max((f for f in s.Faces if f.Area > 50), key=lambda f: f.CenterOfMass.z)
+def measure(shape):
+    """Simulated caliper readings on a keycap shape; -Y is the back edge."""
+    top = max((f for f in shape.Faces if f.Area > 50), key=lambda f: f.CenterOfMass.z)
     pts = [q for e in top.Edges for q in e.discretize(Distance=0.02)]
     yb, yf = max(q.y for q in pts), min(q.y for q in pts)
     mid = [q for q in pts if abs(q.x) < 0.05]
@@ -27,24 +26,37 @@ def measure(**p):
                 top_width=a.distanceToPoint(b), top_length=max(q.x for q in side) - min(q.x for q in side))
 
 
-def fit(m, base=None, iterations=12):
-    """m: measurement dict with keys bottom_width, bottom_length, front_min, front_max,
-    back_min, back_max, top_width, top_length. base: fixed parameters (the set's values)."""
-    back_high = m["back_min"] >= m["front_min"]
-    depth = m["back_max"] - m["back_min"] if back_high else m["front_max"] - m["front_min"]
-    p = dict(base or {})
-    p.update(base_w=m["bottom_length"], base_d=m["bottom_width"], dish_depth=depth, dish_radius=None,
-             top_height=(m["back_min"] + m["front_min"]) / 2, tilt=0.0,
-             draft_sides=14.5, draft_back=14.5, draft_front=14.5)
+def edge_depth(r):
+    """Dish depth as the caliper reads it: max - min on the higher edge."""
+    if r["back_min"] >= r["front_min"]:
+        return r["back_max"] - r["back_min"]
+    return r["front_max"] - r["front_min"]
+
+
+def fit(doc, m, iterations=15):
+    """doc: a native keycap document (Params sheet + Keycap). m: measurement dict with keys
+    bottom_width, bottom_length, front_min, front_max, back_min, back_max, top_width, top_length.
+    Returns the fitted Params values and the simulated readings of the result."""
+    depth = edge_depth(m)
+    v = dict(base_w=m["bottom_length"], base_d=m["bottom_width"], top_height=(m["back_min"] + m["front_min"]) / 2,
+             tilt=0.0, dish_sag=depth, draft_sides=14.5, draft_back=14.5, draft_front=14.5)
+
+    def apply():
+        for k, x in v.items():
+            doc.Params.set(k, repr(x))
+        doc.recompute()
+        return measure(doc.getObject("Keycap").Shape)
+
     for _ in range(iterations):
-        r = measure(**p)
-        p["top_height"] += ((m["back_min"] + m["front_min"]) - (r["back_min"] + r["front_min"])) / 2
-        p["tilt"] += math.degrees(math.atan(
+        r = apply()
+        v["top_height"] += ((m["back_min"] + m["front_min"]) - (r["back_min"] + r["front_min"])) / 2
+        v["tilt"] += math.degrees(math.atan(
             ((m["back_min"] - m["front_min"]) - (r["back_min"] - r["front_min"])) / r["top_width"]))
+        v["dish_sag"] *= depth / edge_depth(r)
         z_side = (r["back_min"] + r["front_min"]) / 2 + depth
-        p["draft_sides"] += math.degrees(math.atan((r["top_length"] - m["top_length"]) / 2 / z_side))
+        v["draft_sides"] += math.degrees(math.atan((r["top_length"] - m["top_length"]) / 2 / z_side))
         z_fb = (r["back_min"] + r["front_min"]) / 2
         d = math.degrees(math.atan((r["top_width"] - m["top_width"]) / 2 / z_fb))
-        p["draft_back"] += d
-        p["draft_front"] += d
-    return p, measure(**p)
+        v["draft_back"] += d
+        v["draft_front"] += d
+    return v, apply()
