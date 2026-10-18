@@ -106,8 +106,10 @@ STLs are meshed from the current FreeCAD files with 0.01 mm deflection, rim down
   stems** are the pair in front of and behind it. Left Ctrl, Right Ctrl and Caps Lock have the
   arrangement turned 90° (`stem_rotated = 1`).
 - `tilt` > 0 raises the back. Rows R3–R6 have the back edge higher, R1–R2 the front edge.
-- Layout positions are on a 19.05 mm grid: the G613's full-size ANSI layout, 104 keys, with its
-  bottom row of 1.5u Ctrl, 1.25u Win/Alt/Menu and a 5.75u Space.
+- Layout positions are on a 19.05 mm grid: the G613's full-size ANSI layout with its bottom row
+  of 1.5u Ctrl, 1.25u Win/Alt/Menu and a 5.75u Space, plus the G1–G6 column on the left, 110 keys.
+- The G-keys reuse the shape of the key in their row: G1 = Esc, G2 = Grave, G3 = Q, G4 = A,
+  G5 = Z, G6 = Down arrow. The column sits 0.5u left of the main block (`x_u` in `layout.csv`).
 
 ## Measurements
 
@@ -166,8 +168,7 @@ The font path is absolute: on another computer, point `Set.font_file` at the cop
 
 ## Known limits and estimates
 
-- Only the 104 keys of the main layout are modeled. The G613's G1–G6 macro keys and media
-  keys are not included.
+- The G613's media keys are not included.
 - No stabilizer mounts on Backspace, Enter, Shifts, Space, Num 0, Num +, Num Enter: those keys
   have only the center stems.
 - No homing bumps on F and J.
