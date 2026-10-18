@@ -9,7 +9,7 @@ values change). After generation the .FCStd files need neither Python nor this s
 edit a cell in Set or Params and recompute. Rerunning overwrites them.
 
 Run it inside the FreeCAD GUI (Python console, or the MCP execute_code tool):
-  exec(open('/home/jpcanesin/Documents/3d/keyboard/build_native.py').read())
+  p = "/path/to/repo/build_native.py"; exec(open(p).read(), {"__file__": p})
 Visibility is only saved from the GUI; files written by a headless run open with everything hidden.
 """
 import csv
@@ -17,7 +17,10 @@ import json
 import os
 import sys
 
-HERE = "/home/jpcanesin/Documents/3d/keyboard"
+# the repository folder: run with exec(open(p).read(), {"__file__": p}) so this file knows where it lives
+HERE = os.path.dirname(os.path.abspath(globals().get("__file__") or os.path.join(os.getcwd(), "x")))
+if not os.path.exists(os.path.join(HERE, "layout.csv")):
+    raise SystemExit("repository not found: run with exec(open(p).read(), {'__file__': p})")
 sys.path.insert(0, HERE)
 import FreeCAD as App  # noqa: E402
 import Part  # noqa: E402

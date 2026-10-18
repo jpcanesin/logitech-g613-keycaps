@@ -7,7 +7,7 @@ object and give the legend its own filament for a two-colour print. Exports what
 FreeCAD files currently contain, edits included.
 
 Run headless:
-  ~/tools/FreeCAD.AppImage freecadcmd -c "exec(open('/home/jpcanesin/Documents/3d/keyboard/export_stl.py').read())"
+  freecadcmd -c "p = '/path/to/repo/export_stl.py'; exec(open(p).read(), {'__file__': p})"
 """
 import csv
 import os
@@ -16,7 +16,10 @@ import FreeCAD as App
 import MeshPart
 import Part
 
-HERE = "/home/jpcanesin/Documents/3d/keyboard"
+# the repository folder: run with exec(open(p).read(), {"__file__": p}) so this file knows where it lives
+HERE = os.path.dirname(os.path.abspath(globals().get("__file__") or os.path.join(os.getcwd(), "x")))
+if not os.path.exists(os.path.join(HERE, "layout.csv")):
+    raise SystemExit("repository not found: run with exec(open(p).read(), {'__file__': p})")
 LINEAR_DEFLECTION = 0.01  # mm, max distance between the mesh and the true surface
 ANGULAR_DEFLECTION = 0.1  # rad
 
