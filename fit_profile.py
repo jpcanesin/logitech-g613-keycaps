@@ -9,12 +9,13 @@ shared front/back draft from the top width.
 import math
 
 
-def measure(shape):
-    """Simulated caliper readings on a keycap shape; -Y is the back edge."""
+def measure(shape, cx=0.0):
+    """Simulated caliper readings on a keycap shape; -Y is the back edge. cx: x of the middle
+    of the raised part (it is off-center on stepped keys)."""
     top = max((f for f in shape.Faces if f.Area > 50), key=lambda f: f.CenterOfMass.z)
     pts = [q for e in top.Edges for q in e.discretize(Distance=0.02)]
     yb, yf = max(q.y for q in pts), min(q.y for q in pts)
-    mid = [q for q in pts if abs(q.x) < 0.05]
+    mid = [q for q in pts if abs(q.x - cx) < 0.05]
     a, b = min(mid, key=lambda q: q.y), max(mid, key=lambda q: q.y)
     # the higher edge's max is the corner peak (sides slope away); the lower edge's max is read near the edge line
     if a.z >= b.z:
@@ -39,13 +40,15 @@ def fit(doc, m, iterations=15):
     Returns the fitted Params values and the simulated readings of the result."""
     depth = edge_depth(m)
     v = dict(base_w=m["bottom_length"], base_d=m["bottom_width"], top_height=(m["back_min"] + m["front_min"]) / 2,
-             tilt=0.0, dish_sag=depth, draft_sides=14.5, draft_back=14.5, draft_front=14.5)
+             tilt=0.0, dish_sag=depth, draft_sides=14.5, draft_back=14.5, draft_front=14.5,
+             body_w=m.get("step_body_length", m["bottom_length"]), step_height=m.get("step_height", 0.0))
+    cx = (v["body_w"] - v["base_w"]) / 2
 
     def apply():
         for k, x in v.items():
             doc.Params.set(k, repr(x))
         doc.recompute()
-        return measure(doc.getObject("Keycap").Shape)
+        return measure(doc.getObject("Keycap").Shape, cx)
 
     for _ in range(iterations):
         r = apply()

@@ -1,38 +1,38 @@
-id,key,row,bottom_width_mm,bottom_length_mm,front_min_mm,front_max_mm,back_min_mm,back_max_mm,top_width_mm,top_length_mm,stabilizer,notes
-R1-1,F1,R1 (F-row),18,18,10.8,11.7,10.5,11.3,13.8,12.8,no,
-R1-2,F8,R1 (F-row),18,18,10.8,11.7,10.5,11.3,13.8,12.8,no,consistency check
-R1-3,Esc,R1 (F-row),18,18,10.8,11.7,10.5,11.3,13.8,12.8,no,often same as F-row; confirm
-R2-1,2,R2 (number),18,18,10.8,11.8,10.3,11,14,12.8,no,
-R2-2,8,R2 (number),18,18,10.8,11.8,10.3,11,14,12.8,no,consistency check
-R2-3,~ (grave),R2 (number),18,18,10.8,11.8,10.3,11,14,12.8,no,
-R2-4,Backspace,R2 (number),18,36.5,10.8,11.8,10.3,11,14,32,yes,measure stab mount positions from center
-R3-1,W,R3 (QWE),18,18,8.5,9.3,9.2,9.6,14,12.8,no,
-R3-2,I,R3 (QWE),18,18,8.5,9.3,9.2,9.6,14,12.8,no,consistency check
-R3-3,Tab,R3 (QWE),18,27.8,8.5,9.3,9.2,9.6,14,22.5,no,
-R3-4,\ (backslash),R3 (QWE),18,27.8,8.5,9.3,9.2,9.6,14,22.5,no,
-R4-1,S,R4 (ASD),18,18,7.6,8.6,9,10.3,14.1,12.8,no,
-R4-2,K,R4 (ASD),18,18,7.6,8.6,9,10.3,14.1,12.8,no,consistency check
-R4-3,F,R4 (ASD),18,18,7.6,8.6,9,10.3,14.1,12.8,no,has homing bump - not modeled (same shape as S/K)
-R4-4,Caps Lock,R4 (ASD),18,32.4,7.6,8.6,9,10.3,14.1,27.1,no,stems ROTATED 90 deg; top_length ESTIMATED (not measurable): side slant 16.3 deg = mean of S and Enter
-R4-5,Enter,R4 (ASD),18,42,7.6,8.6,9,10.3,14.1,36.6,yes,measure stab mount positions from center
-R5-1,Z,R5 (ZXC),18,18,7.5,8.3,9.6,10.1,13.5,12.8,no,
-R5-2,M,R5 (ZXC),18,18,7.5,8.3,9.6,10.1,13.5,12.8,no,consistency check
-R5-3,Left Shift,R5 (ZXC),18,42,7.5,8.3,9.6,10.1,13.5,36.8,yes,heights ASSUMED equal to Z/M (stabs blocked caliper); measure stab mount positions from center
-R5-4,Right Shift,R5 (ZXC),18,51,7.5,8.3,9.6,10.1,13.5,45.9,yes,heights ASSUMED equal to Z/M (stabs blocked caliper); measure stab mount positions from center
-R6-1,Left Ctrl,R6 (bottom),18,27.5,7.3,8.1,9.8,10.6,14.3,22.8,no,stems ROTATED 90 deg
-R6-2,Left Win,R6 (bottom),18,22.8,7.3,8.1,9.8,10.6,14.3,17.6,no,1.25u
-R6-3,Left Alt,R6 (bottom),18,22.8,7.3,8.1,9.8,10.6,14.3,17.6,no,1.25u
-R6-4,Space,R6 (bottom),18,109.3,7.3,8.1,9.8,10.6,14.3,103.5,yes,5.75u; measure stab mount positions from center
-R6-5,Fn (right),R6 (bottom),18,22.8,7.3,8.1,9.8,10.6,14.3,17.6,no,confirmed identical to left Win/Alt; right Alt/Win/Fn/Ctrl reuse left-side shapes - no need to measure
-NAV-1,Insert,nav cluster,18,18,10.8,11.8,10.3,11,14,12.8,no,skip if board has no nav cluster
-NAV-2,Delete,nav cluster,18,18,8.5,9.3,9.2,9.6,14,12.8,no,skip if board has no nav cluster
-NAV-3,Up arrow,nav cluster,18,18,7.5,8.3,9.6,10.1,14,12.8,no,skip if board has no arrows
-NAV-4,Down arrow,nav cluster,18,18,7.3,8.2,9.5,10,14,12.8,no,skip if board has no arrows
-NP-1,Num Lock,numpad,18,18,10.8,11.8,10.3,11,14,12.8,no,skip if no numpad
-NP-2,Num 7,numpad,18,18,8.5,9.3,9.2,9.6,14,12.8,no,skip if no numpad
-NP-3,Num 4,numpad,18,18,7.6,8.6,9,10.3,14.1,12.8,no,skip if no numpad
-NP-4,Num 1,numpad,18,18,7.5,8.3,9.6,10.1,13.5,12.8,no,skip if no numpad
-NP-5,Num 0,numpad,18,36.9,7.3,8.4,9.5,10,13.9,32,yes,skip if no numpad
-NP-6,.,numpad,18,18,7.3,8.4,9.5,10,13.9,12.8,no,skip if no numpad
-NP-7,Num +,numpad,36.7,18,8.5,9.3,9.0,10.3,33.2,12.8,yes,"vertical 2u; heights ESTIMATED (stabs blocked caliper): front edge = Num 7 front, back edge = Num 4 back"
-NP-8,Num Enter,numpad,36.7,18,7.5,8.3,9.5,10.0,33.2,12.8,yes,"vertical 2u; heights ESTIMATED (stabs blocked caliper): front edge = Num 1 front, back edge = Num 0 back"
+id,key,row,bottom_width_mm,bottom_length_mm,front_min_mm,front_max_mm,back_min_mm,back_max_mm,top_width_mm,top_length_mm,step_body_length_mm,step_height_mm,stabilizer,notes
+R1-1,F1,R1 (F-row),18,18,10.8,11.7,10.5,11.3,13.8,12.8,,,no,
+R1-2,F8,R1 (F-row),18,18,10.8,11.7,10.5,11.3,13.8,12.8,,,no,consistency check
+R1-3,Esc,R1 (F-row),18,18,10.8,11.7,10.5,11.3,13.8,12.8,,,no,often same as F-row; confirm
+R2-1,2,R2 (number),18,18,10.8,11.8,10.3,11,14,12.8,,,no,
+R2-2,8,R2 (number),18,18,10.8,11.8,10.3,11,14,12.8,,,no,consistency check
+R2-3,~ (grave),R2 (number),18,18,10.8,11.8,10.3,11,14,12.8,,,no,
+R2-4,Backspace,R2 (number),18,36.5,10.8,11.8,10.3,11,14,32,,,yes,measure stab mount positions from center
+R3-1,W,R3 (QWE),18,18,8.5,9.3,9.2,9.6,14,12.8,,,no,
+R3-2,I,R3 (QWE),18,18,8.5,9.3,9.2,9.6,14,12.8,,,no,consistency check
+R3-3,Tab,R3 (QWE),18,27.8,8.5,9.3,9.2,9.6,14,22.5,,,no,
+R3-4,\ (backslash),R3 (QWE),18,27.8,8.5,9.3,9.2,9.6,14,22.5,,,no,
+R4-1,S,R4 (ASD),18,18,7.6,8.6,9,10.3,14.1,12.8,,,no,
+R4-2,K,R4 (ASD),18,18,7.6,8.6,9,10.3,14.1,12.8,,,no,consistency check
+R4-3,F,R4 (ASD),18,18,7.6,8.6,9,10.3,14.1,12.8,,,no,has homing bump - not modeled (same shape as S/K)
+R4-4,Caps Lock,R4 (ASD),18,32.4,7.6,8.6,9,10.3,14.1,22.5,27.8,2.6,no,"stems ROTATED 90 deg; stepped: raised Tab-like part (base 27.8 = Tab, top 22.5 = Tab top) flush left, shelf 2.6 high on the right; stems centered on the raised part"
+R4-5,Enter,R4 (ASD),18,42,7.6,8.6,9,10.3,14.1,36.6,,,yes,measure stab mount positions from center
+R5-1,Z,R5 (ZXC),18,18,7.5,8.3,9.6,10.1,13.5,12.8,,,no,
+R5-2,M,R5 (ZXC),18,18,7.5,8.3,9.6,10.1,13.5,12.8,,,no,consistency check
+R5-3,Left Shift,R5 (ZXC),18,42,7.5,8.3,9.6,10.1,13.5,36.8,,,yes,heights ASSUMED equal to Z/M (stabs blocked caliper); measure stab mount positions from center
+R5-4,Right Shift,R5 (ZXC),18,51,7.5,8.3,9.6,10.1,13.5,45.9,,,yes,heights ASSUMED equal to Z/M (stabs blocked caliper); measure stab mount positions from center
+R6-1,Left Ctrl,R6 (bottom),18,27.5,7.3,8.1,9.8,10.6,14.3,22.8,,,no,stems ROTATED 90 deg
+R6-2,Left Win,R6 (bottom),18,22.8,7.3,8.1,9.8,10.6,14.3,17.6,,,no,1.25u
+R6-3,Left Alt,R6 (bottom),18,22.8,7.3,8.1,9.8,10.6,14.3,17.6,,,no,1.25u
+R6-4,Space,R6 (bottom),18,109.3,7.3,8.1,9.8,10.6,14.3,103.5,,,yes,5.75u; measure stab mount positions from center
+R6-5,Fn (right),R6 (bottom),18,22.8,7.3,8.1,9.8,10.6,14.3,17.6,,,no,confirmed identical to left Win/Alt; right Alt/Win/Fn/Ctrl reuse left-side shapes - no need to measure
+NAV-1,Insert,nav cluster,18,18,10.8,11.8,10.3,11,14,12.8,,,no,skip if board has no nav cluster
+NAV-2,Delete,nav cluster,18,18,8.5,9.3,9.2,9.6,14,12.8,,,no,skip if board has no nav cluster
+NAV-3,Up arrow,nav cluster,18,18,7.5,8.3,9.6,10.1,14,12.8,,,no,skip if board has no arrows
+NAV-4,Down arrow,nav cluster,18,18,7.3,8.2,9.5,10,14,12.8,,,no,skip if board has no arrows
+NP-1,Num Lock,numpad,18,18,10.8,11.8,10.3,11,14,12.8,,,no,skip if no numpad
+NP-2,Num 7,numpad,18,18,8.5,9.3,9.2,9.6,14,12.8,,,no,skip if no numpad
+NP-3,Num 4,numpad,18,18,7.6,8.6,9,10.3,14.1,12.8,,,no,skip if no numpad
+NP-4,Num 1,numpad,18,18,7.5,8.3,9.6,10.1,13.5,12.8,,,no,skip if no numpad
+NP-5,Num 0,numpad,18,36.9,7.3,8.4,9.5,10,13.9,32,,,yes,skip if no numpad
+NP-6,.,numpad,18,18,7.3,8.4,9.5,10,13.9,12.8,,,no,skip if no numpad
+NP-7,Num +,numpad,36.7,18,8.5,9.3,9.0,10.3,33.2,12.8,,,yes,"vertical 2u; heights ESTIMATED (stabs blocked caliper): front edge = Num 7 front, back edge = Num 4 back"
+NP-8,Num Enter,numpad,36.7,18,7.5,8.3,9.5,10.0,33.2,12.8,,,yes,"vertical 2u; heights ESTIMATED (stabs blocked caliper): front edge = Num 1 front, back edge = Num 0 back"

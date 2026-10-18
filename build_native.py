@@ -66,6 +66,8 @@ SHAPE_FIELDS = [
     ("draft_back", "back wall slant, degrees"),
     ("draft_front", "front wall slant, degrees"),
     ("stem_rotated", "1 = stems/ribs turned 90 degrees, 0 = normal"),
+    ("body_w", "raised part's footprint length, flush left; = base_w when the key has no step"),
+    ("step_height", "height of the flat shelf right of the raised part (stepped keys only)"),
 ]
 
 # Derived cells: (alias, formula). Formulas may use any alias above or below them.
@@ -73,7 +75,9 @@ DERIVED = [
     ("kx", "tan(draft_sides)"),
     ("kb", "tan(draft_back)"),
     ("kf", "tan(draft_front)"),
-    ("half_w", "base_w / 2 + kx * lip_height"),     # wall planes at z=0 (they pass the base band at lip_height)
+    ("body_dx", "(body_w - base_w) / 2"),            # raised part's center, flush with the left edge
+    ("half_w", "body_w / 2 + kx * lip_height"),     # wall planes at z=0 (they pass the base band at lip_height)
+    ("step_half_w", "base_w / 2 + kx * lip_height"),  # full-footprint side walls, for the shelf
     ("half_b", "base_d / 2 + kb * lip_height"),
     ("half_f", "base_d / 2 + kf * lip_height"),
     ("tan_tilt", "tan(abs(tilt))"),
@@ -84,7 +88,7 @@ DERIVED = [
     ("edge_z", "(top_height + edge_half * tan_tilt) / (1 + edge_k * tan_tilt)"),
     ("edge_run", "half_w - kx * edge_z - corner_radius"),
     ("dish_radius", "(edge_run ^ 2 + dish_sag ^ 2) / (2 * dish_sag)"),
-    ("full_sag", "dish_radius > base_w / 2 ? dish_radius - sqrt(dish_radius ^ 2 - (base_w / 2) ^ 2) : dish_radius"),
+    ("full_sag", "dish_radius > body_w / 2 ? dish_radius - sqrt(dish_radius ^ 2 - (body_w / 2) ^ 2) : dish_radius"),
     ("wall_top", "top_height + base_d / 2 * tan_tilt + full_sag + top_margin"),
     ("cutter_len", "cutter_length_factor * (base_w > base_d ? base_w : base_d)"),
     ("cutter_size", "cutter_min_size > cutter_len ? cutter_min_size : cutter_len"),
@@ -98,6 +102,7 @@ SET_DEFAULTS = dict(
     top_margin=3.0, bottom_margin=1.0, rib_overlap=0.1, cutter_min_size=200.0, cutter_length_factor=4.0,
 )
 MEASURED = ["bottom_width", "bottom_length", "front_min", "front_max", "back_min", "back_max", "top_width", "top_length"]
+STEP = ["step_body_length", "step_height"]  # optional: stepped keys (e.g. a stepped Caps Lock)
 
 
 def read_set():
@@ -120,8 +125,9 @@ def read_shapes():
     shapes = {}
     for r in csv.DictReader(open(os.path.join(HERE, "keys_to_measure.csv"))):
         if r["front_min_mm"]:
-            shapes[r["id"]] = dict(m={k: float(r[k + "_mm"]) for k in MEASURED},
-                                   rotated="ROTATED" in r["notes"].upper())
+            m = {k: float(r[k + "_mm"]) for k in MEASURED}
+            m.update({k: float(r[k + "_mm"]) for k in STEP if r.get(k + "_mm")})
+            shapes[r["id"]] = dict(m=m, rotated="ROTATED" in r["notes"].upper())
     return shapes
 
 
@@ -226,7 +232,7 @@ def build_shape(path, shape_id, vals, set_doc_name):
     P = "Params."
     # outer body: ruled loft between rounded rects, clipped by the straight base band
     def outer_at(z):
-        return dict(x="-(%shalf_w - %skx * %s)" % (P, P, z), y="-(%shalf_b - %skb * %s)" % (P, P, z), z=z,
+        return dict(x="%sbody_dx - (%shalf_w - %skx * %s)" % (P, P, P, z), y="-(%shalf_b - %skb * %s)" % (P, P, z), z=z,
                     length="2 * (%shalf_w - %skx * %s)" % (P, P, z),
                     height="%shalf_b - %skb * %s + %shalf_f - %skf * %s" % (P, P, z, P, P, z),
                     fillet=P + "corner_radius")
@@ -235,8 +241,8 @@ def build_shape(path, shape_id, vals, set_doc_name):
     loft = doc.addObject("Part::Loft", "OuterLoft")
     loft.Sections = [lo, hi]
     loft.Solid, loft.Ruled = True, True
-    lip = rect(doc, "BaseRect", "-%sbase_w / 2" % P, "-%sbase_d / 2" % P, "0", P + "base_w", P + "base_d",
-               P + "lip_radius")
+    lip = rect(doc, "BaseRect", "%sbody_dx - %sbody_w / 2" % (P, P), "-%sbase_d / 2" % P, "0", P + "body_w",
+               P + "base_d", P + "lip_radius")
     band = doc.addObject("Part::Extrusion", "BaseBand")
     band.Base = lip
     band.Solid = True
@@ -250,7 +256,7 @@ def build_shape(path, shape_id, vals, set_doc_name):
     cyl = doc.addObject("Part::Cylinder", "DishCylinder")
     expr(cyl, "Radius", P + "dish_radius")
     expr(cyl, "Height", P + "cutter_len")
-    expr(cyl, "Placement.Base.x", "0")
+    expr(cyl, "Placement.Base.x", P + "body_dx")
     expr(cyl, "Placement.Base.y", "%sdish_radius * %ssin_tilt - %scutter_len / 2 * %scos_tilt" % (P, P, P, P))
     expr(cyl, "Placement.Base.z",
          "%stop_height + %sdish_radius * %scos_tilt + %scutter_len / 2 * %ssin_tilt" % (P, P, P, P, P))
@@ -264,7 +270,7 @@ def build_shape(path, shape_id, vals, set_doc_name):
 
     # cavity: inner drafted body with sharp corners, below the ceiling plane
     def inner_at(z):
-        return dict(x="-(%shalf_w - %swall - %skx * %s)" % (P, P, P, z),
+        return dict(x="%sbody_dx - (%shalf_w - %swall - %skx * %s)" % (P, P, P, P, z),
                     y="-(%shalf_b - %swall - %skb * %s)" % (P, P, P, z), z=z,
                     length="2 * (%shalf_w - %swall - %skx * %s)" % (P, P, P, z),
                     height="%shalf_b - %swall - %skb * %s + %shalf_f - %swall - %skf * %s" % (P, P, P, z, P, P, P, z),
@@ -278,7 +284,38 @@ def build_shape(path, shape_id, vals, set_doc_name):
     cavity = doc.addObject("Part::Cut", "Cavity")
     cavity.Base, cavity.Tool = iloft, ceil
     shell = doc.addObject("Part::Cut", "Shell")
-    shell.Base, shell.Tool = outer_cut, cavity
+    if vals["body_w"] < vals["base_w"]:
+        # stepped key: a hollow full-footprint shelf up to step_height, merged with the raised part
+        def step_at(z, inset):
+            return dict(x="-(%sstep_half_w - %s - %skx * %s)" % (P, inset, P, z),
+                        y="-(%shalf_b - %s - %skb * %s)" % (P, inset, P, z), z=z,
+                        length="2 * (%sstep_half_w - %s - %skx * %s)" % (P, inset, P, z),
+                        height="%shalf_b - %s - %skb * %s + %shalf_f - %s - %skf * %s" % (P, inset, P, z, P, inset, P, z),
+                        fillet=P + "corner_radius" if inset == "0" else "0")
+        sl = doc.addObject("Part::Loft", "StepLoft")
+        sl.Sections = [rect(doc, "StepBottom", **step_at("0", "0")), rect(doc, "StepTop", **step_at(P + "step_height", "0"))]
+        sl.Solid, sl.Ruled = True, True
+        srect = rect(doc, "StepBaseRect", "-%sbase_w / 2" % P, "-%sbase_d / 2" % P, "0", P + "base_w", P + "base_d",
+                     P + "lip_radius")
+        sband = doc.addObject("Part::Extrusion", "StepBaseBand")
+        sband.Base = srect
+        sband.Solid = True
+        sband.DirMode = "Custom"
+        sband.Dir = V(0, 0, 1)
+        expr(sband, "LengthFwd", P + "step_height")
+        step = doc.addObject("Part::MultiCommon", "StepOuter")
+        step.Shapes = [sl, sband]
+        si = doc.addObject("Part::Loft", "StepCavity")
+        si.Sections = [rect(doc, "StepInnerBottom", **step_at("(-%sbottom_margin)" % P, P + "wall")),
+                       rect(doc, "StepInnerTop", **step_at("(%sstep_height - %stop_thickness)" % (P, P), P + "wall"))]
+        si.Solid, si.Ruled = True, True
+        outer_all = doc.addObject("Part::MultiFuse", "OuterWithStep")
+        outer_all.Shapes = [outer_cut, step]
+        cavity_all = doc.addObject("Part::MultiFuse", "CavityWithStep")
+        cavity_all.Shapes = [cavity, si]
+        shell.Base, shell.Tool = outer_all, cavity_all
+    else:
+        shell.Base, shell.Tool = outer_cut, cavity
 
     # stems and ribs in the normal orientation; a clone turns them when stem_rotated = 1
     feats = []
@@ -311,6 +348,7 @@ def build_shape(path, shape_id, vals, set_doc_name):
     turned.Label = "MountTurned"
     turned.Placement.Rotation.Axis = V(0, 0, 1)
     expr(turned, "Placement.Rotation.Angle", "%sstem_rotated * 90" % P)
+    expr(turned, "Placement.Base.x", P + "body_dx")  # stems centered on the raised part
     trimmed = doc.addObject("Part::MultiCommon", "MountTrimmed")
     trimmed.Shapes = [turned, outer_cut]
 
@@ -354,6 +392,8 @@ def main():
         rot = 1 if shape["rotated"] else 0
         if sig in cache:
             vals = cache[sig]
+            vals.setdefault("body_w", vals["base_w"])  # entries cached before stepped keys existed
+            vals.setdefault("step_height", 0.0)
             doc, result = build_shape(os.path.join(out, sid + ".FCStd"), sid, vals, set_doc.Name)
             note = "cached"
         else:
@@ -361,10 +401,11 @@ def main():
             start = dict(base_w=m["bottom_length"], base_d=m["bottom_width"],
                          top_height=(m["back_min"] + m["front_min"]) / 2, tilt=0.0,
                          dish_sag=fit_profile.edge_depth(m), draft_sides=14.5, draft_back=14.5, draft_front=14.5,
-                         stem_rotated=rot)
+                         stem_rotated=rot, body_w=m.get("step_body_length", m["bottom_length"]),
+                         step_height=m.get("step_height", 0.0))
             doc, result = build_shape(os.path.join(out, sid + ".FCStd"), sid, start, set_doc.Name)
             vals, pred = fit_profile.fit(doc, m)
-            vals["stem_rotated"] = rot
+            vals.update(stem_rotated=rot, body_w=start["body_w"], step_height=start["step_height"])
             err = max(abs(pred[c] - m[c]) for c in ("front_min", "back_min", "top_width", "top_length"))
             note = "fitted, worst error %.3f mm" % err
         show_only(doc, [result])

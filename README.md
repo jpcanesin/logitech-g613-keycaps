@@ -35,7 +35,7 @@ the scripts once generated: open them, edit a spreadsheet cell, recompute.
 - `set.FCStd` holds set-wide values. Every shape's `Params` sheet reads them through
   cross-file references (`set#Set.wall`), so changing one there updates every key.
 - Each `shapes/<id>.FCStd` holds the key's own values in `Params` (footprint, height, tilt,
-  dish, the three wall slants, stem rotation), cells derived from them, and a model built
+  dish, the three wall slants, stem rotation, raised-part length `body_w` and `step_height`), cells derived from them, and a model built
   from Draft rectangle lofts, a tilted dish cylinder, the cavity cut and PartDesign stems and
   ribs, all driven by expressions.
 - `keyboard.FCStd` links every key to its shape file. Keys with the same shape share one
@@ -88,6 +88,11 @@ Per key shape (`keys_to_measure.csv`), with the key standing on its rim:
 - `front_max_mm` / `back_max_mm`: height at the corners (jaw laid along the edge). Only the
   higher edge's max is reliable; its max − min is the dish depth.
 - `top_width_mm` / `top_length_mm`: top outline, measured across the middle.
+- `step_body_length_mm` / `step_height_mm` (optional, stepped keys only): base length of the
+  raised part, flush with the left edge, and height of the flat shelf that fills the rest of
+  the footprint on the right. The raised part is fitted like a normal key (heights and top
+  outline are measured on it), the shelf is hollow with a roof `top_thickness` thick, and the
+  stems are centered on the raised part.
 
 The fit derives the key's center height and tilt from the two mins, the dish from the higher
 edge's max − min, the side slant from the top length and one shared front/back slant from the
@@ -109,8 +114,12 @@ thickness.
 - No stabilizer mounts on Backspace, Enter, Shifts, Space, Num 0, Num +, Num Enter: those keys
   have only the center stems.
 - No homing bumps on F and J.
-- Estimated, not measured: top thickness (0.6 mm), Shift heights (set equal to Z/M), Caps Lock
-  top length, Num + and Num Enter heights (continued from the neighboring numpad keys).
+- Estimated, not measured: top thickness (0.6 mm), Shift heights (set equal to Z/M), Num + and
+  Num Enter heights (continued from the neighboring numpad keys), and the stepped Caps Lock's
+  raised-part base length (27.8 mm, taken from Tab).
+- Caps Lock is a stepped key: a Tab-like raised part with the ASD row's profile, and a 2.6 mm
+  shelf on the right. The shelf objects only exist in stepped shape files, so turning another
+  key into a stepped one means regenerating it with the step columns filled in.
 
 ## History
 
