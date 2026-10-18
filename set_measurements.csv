@@ -1,0 +1,16 @@
+parameter,how_to_measure,key_1,key_2,key_3,reference_model_value
+wall_thickness_mm,caliper jaws across the wall at the rim,1.1,,,1.00
+straight_base_height_mm,"height of the vertical band at the base, before the slant starts",1.1,,,0.74
+corner_radius_mm,outer vertical corner radius,1.41,,,1.41
+horiz_stem_width_mm,horizontal pair (left/right stems): size across the stem (front-back),1.8,,,1.80
+horiz_stem_length_mm,horizontal pair (left/right stems): size pointing to the center (left-right),1.2,,,1.45
+horiz_stem_tip_from_base_mm,horizontal pair: from the base (rim plane) to the stem tip; the stem then runs up to the inside of the top,2.6,,,2.50
+horiz_stem_gap_mm,inner gap between the two left/right stems,5.7,,,5.35
+horiz_stem_rib_gap_mm,left/right stems: from the tip to where the rib starts,2.7,,,3.25
+vert_stem_width_mm,vertical pair (front/back stems): size across the stem (left-right),2.3,,,2.40
+vert_stem_length_mm,vertical pair (front/back stems): size pointing to the center (front-back),1,,,1.08
+vert_stem_tip_from_base_mm,vertical pair: from the base (rim plane) to the stem tip; the stem then runs up to the inside of the top,1.6,,,1.50
+vert_stem_gap_mm,inner gap between the two front/back stems,8.6,,,8.55
+vert_stem_rib_gap_mm,front/back stems: from the tip to where the rib starts,4.9,,,4.69 back / 3.17 front
+rib_thickness_mm,thin wall joining each stem to the side wall,0.6,,,0.80
+top_thickness_mm,"ESTIMATED: top thickness, normal to the tilted top (lowered so vertical-stem ribs survive on steep rows)",0.6,,,1.00
